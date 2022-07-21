@@ -1,0 +1,284 @@
+---
+title: "Demographics"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(RSQLite)
+library(ggplot2)
+library(broom.mixed)
+library(tidyr)
+library(brms)
+library(bayesplot)
+library(rstan)
+library(multcomp)
+library(coda)
+library(tidybayes)
+library(gridExtra)
+
+# options for rstan
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+In this notebook we'll examine the correlation between the neuroimaging derived phenotype scores and clinical scores in the UK biobank population.
+
+```{r}
+# create sqlite connection
+ukbb.db <- DBI::dbConnect(SQLite(),
+                          "../data/ukb40183.db")
+```
+
+```{r}
+# define clinical score
+threshold = 0.5
+
+getdata <- function(threshold){
+  # pairs matching
+  alldata <- dbGetQuery(ukbb.db,
+                        sql(paste("SELECT clinicaldata.eid, clinicaldata.noncancer_code_selfreported,",
+                                  "demogs.age, demogs.visit, demogs.handedness,",
+                                  "baseline.sex,",
+                                  "ukbb_t1_phenotype.mean",
+                                  "FROM clinicaldata",
+                                  "JOIN ukbb_t1_phenotype, demogs, baseline ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                  "AND clinicaldata.eid = demogs.eid",
+                                  "AND clinicaldata.visit = demogs.visit",
+                                  "AND clinicaldata.eid = baseline.eid",
+                                  "AND ukbb_t1_phenotype.eid = baseline.eid",
+                                  "AND demogs.eid = baseline.eid",
+                                  "AND ukbb_t1_phenotype.eid = demogs.eid",
+                                  "WHERE demogs.age IS NOT ''",
+                                  "AND baseline.imaging = 1"))) %>%
+                    
+    filter(visit <= 2) %>%
+    group_by(eid) %>%
+    filter(visit == max(visit))
+
+  alldata$adlike <- sapply(alldata$mean,
+                           function(x, thr) if (x >=  thr) { return("Positive") } else {return("Negative")},
+                           thr = threshold)
+  
+  alldata <- alldata %>%
+    mutate(adlike = ifelse(noncancer_code_selfreported == "1263", "AD", adlike)) %>%
+    filter(adlike != "AD") # filter out those with AD at recruitment
+  
+  
+  alldata$adlike <- as.factor(alldata$adlike)
+  alldata$age <- as.numeric(alldata$age)
+  
+  # convert age to years
+  alldata$age <- alldata$age / 365.25
+  
+  return(alldata)
+}
+
+```
+
+# Other health indicators
+
+## Age
+
+```{r}
+clinscore_name = "Age"
+
+alldata <- getdata(threshold = threshold)
+
+alldata %>%
+  group_by(adlike, visit) %>%
+  summarise(n = mean(age))
+```
+
+```{r}
+p <- ggplot(alldata,
+            aes(y = age,
+                x = adlike,
+                fill = adlike)) +
+  geom_boxplot() +
+  labs(y = clinscore_name) +
+  theme(axis.title.x = element_blank(),
+        legend.position = "None",
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20))
+
+print(p)
+
+```
+
+```{r}
+# Bayesian analysis
+priors <- c(prior(cauchy(0, 10), class = "Intercept"), 
+            prior(cauchy(0, 10), class = "b"), 
+            prior(cauchy(0, 10), class = "sigma"))
+
+cog_brms <- brm(age ~ adlike,
+                data = alldata, 
+                iter = 5000, warmup = 1000, chains = 4, 
+                prior = priors)
+
+summary(cog_brms)
+
+```
+
+```{r}
+summary_model <- summary(cog_brms)
+
+cog_brms %>%
+  spread_draws(b_adlikePositive) %>%
+  ggplot(aes(x = b_adlikePositive)) +
+  geom_density() +
+  geom_vline(aes(xintercept = mean(b_adlikePositive)),
+             colour = "blue",
+             linetype = "dashed") +
+  geom_vline(xintercept = summary_model$fixed[2,3],
+             colour = "blue",
+             linetype = "dashed") + 
+  geom_vline(xintercept = summary_model$fixed[2,4],
+             colour = "blue",
+             linetype = "dashed")
+
+```
+
+```{r, fig.height=2.5, fig.width=6}
+cog_brms_draws <- cog_brms %>%
+  spread_draws(b_adlikePositive, b_Intercept)
+
+mean_intercept = mean(cog_brms_draws$b_Intercept)
+sd_control = sd(alldata[alldata$adlike == "Negative", "age"][["age"]]) * 0.1
+
+cog_brms_draws %>%
+  dplyr::select(b_adlikePositive, b_Intercept) %>%
+  mutate(b_adlikePositive = mean_intercept + b_adlikePositive) %>%
+  pivot_longer(cols = c(b_adlikePositive, b_Intercept)) %>%
+  group_by(name) %>%
+  median_qi(.width = c(.8, .95)) %>%
+  ggplot(aes(y = name, x = value, xmin = .lower, xmax = .upper)) +
+  geom_rect(xmin = mean_intercept - sd_control,
+            xmax = mean_intercept + sd_control,
+            ymin = 0, ymax = 3,
+            fill = "cornsilk3") +
+  geom_pointinterval() +
+  geom_vline(xintercept = mean_intercept, linetype = "dashed", colour = "blue") +
+  geom_vline(xintercept = mean_intercept + sd_control, linetype = "dashed", colour = "blue") +
+  geom_vline(xintercept = mean_intercept - sd_control, linetype = "dashed", colour = "blue") +
+  scale_y_discrete(labels = c("AD-like positive", "AD-like negative")) +
+  labs(x = clinscore_name) +
+  theme(axis.title.y = element_blank(),
+        axis.text = element_text(size = 15),
+        axis.title.x = element_text(size = 15))
+```
+
+
+
+## Sex
+
+```{r}
+clinscore_name = "Sex"
+
+alldata <- getdata(threshold = threshold)
+
+alldata_summary <- alldata %>%
+  group_by(adlike, visit) %>%
+  summarise(female = length(sex[sex == 0]),
+            male = length(sex[sex == 1]),
+            .groups = "keep")
+
+alldata_summary <- as.data.frame(alldata_summary)
+
+all_pos = nrow(alldata[alldata$adlike == "Positive",])
+all_neg = nrow(alldata[alldata$adlike == "Negative",])
+
+alldata_summary[1, c("female", "male")] <- (alldata_summary[1, c("female", "male")] / all_neg) * 100
+alldata_summary[2, c("female", "male")] <- (alldata_summary[2, c("female", "male")] / all_pos) * 100
+
+alldata_summary
+
+```
+
+```{r}
+alldata_summary <- pivot_longer(alldata_summary,
+                                cols = c("female", "male"),
+                                names_to = "sex",
+                                values_to = "proportion")
+
+p <- ggplot(alldata_summary,
+            aes(x = adlike,
+                y = proportion,
+                fill = sex)) +
+  geom_bar(stat = "identity",
+           position = position_dodge2())
++
+  labs(y = clinscore_name) +
+  theme(axis.title.x = element_blank(),
+        legend.position = "None",
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20))
+
+print(p)
+
+```
+
+```{r}
+# Bayesian analysis
+priors <- c(prior(cauchy(0, 10), class = "Intercept"), 
+            prior(cauchy(0, 10), class = "b"), 
+            prior(cauchy(0, 10), class = "sigma"))
+
+cog_brms <- brm(sex ~ adlike,
+                data = alldata, 
+                iter = 5000, warmup = 1000, chains = 4, 
+                prior = priors)
+
+summary(cog_brms)
+
+```
+
+```{r}
+summary_model <- summary(cog_brms)
+
+cog_brms %>%
+  spread_draws(b_adlikePositive) %>%
+  ggplot(aes(x = b_adlikePositive)) +
+  geom_density() +
+  geom_vline(aes(xintercept = mean(b_adlikePositive)),
+             colour = "blue",
+             linetype = "dashed") +
+  geom_vline(xintercept = summary_model$fixed[2,3],
+             colour = "blue",
+             linetype = "dashed") + 
+  geom_vline(xintercept = summary_model$fixed[2,4],
+             colour = "blue",
+             linetype = "dashed")
+
+```
+
+```{r, fig.height=2.5, fig.width=6}
+cog_brms_draws <- cog_brms %>%
+  spread_draws(b_adlikePositive, b_Intercept)
+
+mean_intercept = mean(cog_brms_draws$b_Intercept)
+sd_control = sd(alldata[alldata$adlike == "Negative", "sex"][["sex"]]) * 0.1
+
+cog_brms_draws %>%
+  dplyr::select(b_adlikePositive, b_Intercept) %>%
+  mutate(b_adlikePositive = mean_intercept + b_adlikePositive) %>%
+  pivot_longer(cols = c(b_adlikePositive, b_Intercept)) %>%
+  group_by(name) %>%
+  median_qi(.width = c(.8, .95)) %>%
+  ggplot(aes(y = name, x = value, xmin = .lower, xmax = .upper)) +
+  geom_rect(xmin = mean_intercept - sd_control,
+            xmax = mean_intercept + sd_control,
+            ymin = 0, ymax = 3,
+            fill = "cornsilk3") +
+  geom_pointinterval() +
+  geom_vline(xintercept = mean_intercept, linetype = "dashed", colour = "blue") +
+  geom_vline(xintercept = mean_intercept + sd_control, linetype = "dashed", colour = "blue") +
+  geom_vline(xintercept = mean_intercept - sd_control, linetype = "dashed", colour = "blue") +
+  scale_y_discrete(labels = c("AD-like positive", "AD-like negative")) +
+  labs(x = clinscore_name) +
+  theme(axis.title.y = element_blank(),
+        axis.text = element_text(size = 15),
+        axis.title.x = element_text(size = 15))
+```
+

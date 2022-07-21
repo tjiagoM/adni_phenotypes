@@ -1,0 +1,124 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Correlations between mean AD scores and age
+```{r}
+library(dplyr)
+library(RSQLite)
+library(ggplot2)
+library(broom.mixed)
+library(tidyr)
+library(brms)
+library(bayesplot)
+library(rstan)
+library(multcomp)
+library(coda)
+library(tidybayes)
+
+# options for rstan
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+```{r}
+# create sqlite connection
+ukbb.db <- DBI::dbConnect(SQLite(),
+                          "../data/ukb40183.db")
+
+```
+
+```{r}
+# define clinical score
+threshold = 0.5
+
+getdata <- function(threshold){
+  # pairs matching
+  alldata <- dbGetQuery(ukbb.db,
+                        sql(paste("SELECT clinicaldata.eid, demogs.age, demogs.visit,",
+                                  "ukbb_t1_phenotype.mean",
+                                  "FROM clinicaldata",
+                                  "JOIN ukbb_t1_phenotype, demogs ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                  "AND clinicaldata.eid = demogs.eid",
+                                  "AND ukbb_t1_phenotype.eid = demogs.eid",
+                                  "WHERE clinicaldata.t1_structural IS NOT ''",
+                                  "AND clinicaldata.visit IS '0'",
+                                  "AND demogs.visit IS  '0'",
+                                  "AND demogs.age IS NOT ''")))
+
+  alldata$adlike <- as.factor(sapply(alldata$mean,
+                                     function(x, thr) if (x >= thr) { return("Positive") } else { return("Negative") },
+                                     thr = threshold))
+
+  alldata$age <- as.numeric(alldata$age)
+  return(alldata)
+}
+
+```
+
+
+```{r}
+# import data
+alldata <- getdata(threshold) %>%
+  mutate(age = age / 365.25)
+```
+
+
+```{r}
+# plot mean score against age
+alldata %>%
+  ggplot(aes(x = age,
+             y = mean)) +
+  geom_bin2d(bins = 200) +
+  scale_fill_continuous(type = "viridis") +
+  labs(x = "Age",
+       y = "AD-like mean",
+       fill = "Density\ncount")
+```
+
+```{r}
+# Bayesian analysis
+priors <- c(prior(normal(50,50),
+                  class = "Intercept"),
+            prior(normal(50,50),
+                  class = "b"),
+            prior(cauchy(0,10),
+                  class = "sigma"))
+
+age_brms <- brm(mean ~ age,
+                data = alldata,
+                iter = 5000, warmup = 1000, chains = 4,
+                prior = priors)
+
+summary(age_brms)
+
+```
+
+```{r}
+alldata %>%
+  ggplot(aes(y = age,
+             x = adlike,
+             fill = adlike)) +
+  geom_boxplot()
+```
+
+
+```{r}
+# Bayesian analysis
+priors <- c(prior(normal(50,50),
+                  class = "Intercept"),
+            prior(normal(50,50),
+                  class = "b"),
+            prior(cauchy(0,10),
+                  class = "sigma"))
+
+age_brms_adlike <- brm(adlike ~ age,
+                       data = alldata,
+                       iter = 5000, warmup = 1000, chains = 4,
+                       prior = priors)
+
+summary(age_brms_adlike)
+
+```

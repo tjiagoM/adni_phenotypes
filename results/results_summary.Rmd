@@ -1,0 +1,27 @@
+---
+title: "UK Biobank Results"
+output: html_notebook
+---
+
+```{r}
+library(xtable)
+library(dplyr)
+```
+
+
+```{r}
+ukbb_50 <- read.table("latest_output_ukb_50.csv",
+                      sep = ",",
+                      header = TRUE)
+```
+
+
+```{r}
+
+ukbb_50_summary <- ukbb_50 %>%
+  mutate(AD = mean > 0.5) %>%
+  group_by(AD) %>%
+  summarise(n = n()) %>%
+  group_by(n) %>%
+  mutate(percent = (n / nrow(ukbb_50)) * 100)
+```

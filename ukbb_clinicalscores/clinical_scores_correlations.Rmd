@@ -1,0 +1,69 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(RSQLite)
+library(ggplot2)
+```
+
+In this notebook we'll examine the correlation between the neuroimaging derived phenotype scores and clinical scores in the UK biobank population.
+
+```{r}
+# create sqlite connection
+ukbb.db <- DBI::dbConnect(SQLite(),
+                          "../data/ukb40183.db")
+
+```
+
+```{r}
+# import data
+threshold = 0.5
+
+getdata <- function(clinscore, threshold){
+  # pairs matching
+  alldata <- dbGetQuery(ukbb.db,
+                        sql(paste("SELECT clinicaldata.eid,", paste("clinicaldata", clinscore, sep = "."), " AS clinscore,",
+                                  "ukbb_t1_phenotype.mean",
+                                  "FROM clinicaldata",
+                                  "JOIN ukbb_t1_phenotype ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                  "WHERE clinicaldata.t1_structural IS NOT ''",
+                                  "AND", paste("clinicaldata", clinscore, sep = "."), "IS NOT ''")))
+
+  alldata$adlike <- as.factor(sapply(alldata$mean,
+                                     function(x, thr) if(x >= thr) { return("Positive") } else { return("Negative") },
+                                     thr = threshold))
+
+  alldata$clinscore <- as.numeric(alldata$clinscore)
+  return(alldata)
+}
+```
+
+## Tower rearranging
+
+```{r}
+clinscore = "towerrearranging_n_correct"
+
+alldata <- getdata(clinscore = clinscore,
+                   threshold = threshold)
+
+# plot clinical score vs mean phenotype score
+p <- ggplot(alldata,
+            aes(x = mean,
+                y = clinscore,
+                colour = adlike)) +
+  geom_point(position = position_jitter(height = 0.1,
+                                        width = 0))
+
+print(p)
+```
+
+```{r}
+# Bayesian regression model
+
+
+```
+
+
