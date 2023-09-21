@@ -11,15 +11,6 @@
 This repository contains all the code necessary to run and further extend the experiments presented in [our paper at Communications Medicine]([https://doi.org/10.1101/2022.01.05.22268795](https://www.nature.com/articles/s43856-023-00313-w)). If you use our work in your research please cite our paper with the following bibtex:
 
 ```
-@article{Azevedo2022,
-  doi = {10.1101/2022.01.05.22268795},
-  url = {https://doi.org/10.1101/2022.01.05.22268795},
-  year = {2022},
-  month = jan,
-  publisher = {Cold Spring Harbor Laboratory},
-  author = {Tiago Azevedo and Richard A.I. Bethlehem and David J. Whiteside and Nol Swaddiwudhipong and James B. Rowe and Pietro Li{\'{o}} and Timothy Rittman},
-  title = {Identifying healthy individuals with Alzheimer neuroimaging phenotypes in the {UK} Biobank}
-}
 @article{Azevedo2023,
   doi = {10.1038/s43856-023-00313-w},
   url = {https://doi.org/10.1038/s43856-023-00313-w},
