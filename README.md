@@ -1,14 +1,14 @@
 [![GitHub license](https://img.shields.io/github/license/tjiagoM/adni_phenotypes)](https://github.com/tjiagoM/adni_phenotypes/blob/master/LICENSE)
-[![DOI](https://img.shields.io/badge/DOI-10.1101/2022.01.05.22268795-blue.svg)](https://doi.org/10.1101/2022.01.05.22268795)
+[![DOI](https://img.shields.io/badge/DOI-10.1038/s43856--023--00313--w-blue.svg)](https://doi.org/10.1038/s43856-023-00313-w)
 
-# Identifying healthy individuals with Alzheimer neuroimaging phenotypes in the UK Biobank
+#  Identifying healthy individuals with Alzheimer’s disease neuroimaging phenotypes in the UK Biobank 
 
 *Tiago Azevedo, Richard A.I. Bethlehem, David J. Whiteside, Nol Swaddiwudhipong, James B. Rowe, Pietro Lió, Timothy Rittman*
 
 ![Model architecture](data/adni_arch.png)
 
 
-This repository contains all the code necessary to run and further extend the experiments presented in [a preprint at MedRxiv](https://doi.org/10.1101/2022.01.05.22268795). If you use our work in your research please cite our paper with the following bibtex:
+This repository contains all the code necessary to run and further extend the experiments presented in [our paper at Communications Medicine]([https://doi.org/10.1101/2022.01.05.22268795](https://www.nature.com/articles/s43856-023-00313-w)). If you use our work in your research please cite our paper with the following bibtex:
 
 ```
 @article{Azevedo2022,
@@ -19,6 +19,18 @@ This repository contains all the code necessary to run and further extend the ex
   publisher = {Cold Spring Harbor Laboratory},
   author = {Tiago Azevedo and Richard A.I. Bethlehem and David J. Whiteside and Nol Swaddiwudhipong and James B. Rowe and Pietro Li{\'{o}} and Timothy Rittman},
   title = {Identifying healthy individuals with Alzheimer neuroimaging phenotypes in the {UK} Biobank}
+}
+@article{Azevedo2023,
+  doi = {10.1038/s43856-023-00313-w},
+  url = {https://doi.org/10.1038/s43856-023-00313-w},
+  year = {2023},
+  month = jul,
+  publisher = {Springer Science and Business Media {LLC}},
+  volume = {3},
+  number = {1},
+  author = {Tiago Azevedo and Richard A.I. Bethlehem and David J. Whiteside and Nol Swaddiwudhipong and James B. Rowe and Pietro Li{\'{o}} and Timothy Rittman},
+  title = {Identifying healthy individuals with Alzheimer's disease neuroimaging phenotypes in the {UK} Biobank},
+  journal = {Communications Medicine}
 }
 ```
 
@@ -71,7 +83,6 @@ will run infrence on the test set of the ADNI dataset using Monte Carlo dropout 
 
 
 # Bayesian Statistical Analysis
-We are still writing up documentation about this part of the paper.
 
 Folders corresponding to this part are:
 - `adni_clinicalscores/`
