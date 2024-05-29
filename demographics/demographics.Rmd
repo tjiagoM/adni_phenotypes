@@ -1,0 +1,335 @@
+---
+title: "Demographics"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(xtable)
+library(janitor)
+library(RSQLite)
+library(DT)
+```
+
+ADNI demographics
+
+```{r}
+# import ADNI clinical scores
+adni.clin <- read.table("../data/ADNIMERGE_2020_07_01.csv",
+                        sep = ",",
+                        header = TRUE) %>%
+  filter(VISCODE == "bl") %>%
+  mutate(subj = paste("sub", gsub("_", "-", PTID), sep = "-"))
+   
+
+# import AD-like results
+adni.results <- read.table("../results/latest_output_adni_50.csv",
+                           sep = ",",
+                           header = TRUE)
+names(adni.results)[1] <- "subj"
+adni.test.results <- read.table("../results/latest_output_adni_train_50.csv",
+                                sep = ",",
+                                header = TRUE)
+names(adni.test.results)[1] <- "subj"
+
+adni.results <- rbind(adni.results, adni.test.results)
+rm("adni.test.results")
+
+# join clinical data to imaging data
+adnidata <- left_join(adni.results,
+                      adni.clin,
+                      by = c("subj"))
+
+
+# set and apply threshold
+threshold = 0.5
+adnidata$adlike <- sapply(adnidata$mean,
+                          function(x, thr) if (x >=  thr) { return("Positive") } else {return("Negative")},
+                          thr = threshold)
+  
+
+rm("adni.clin")
+
+# Summarise
+adnidata_summary <- adnidata %>%
+  group_by(DX_bl) %>%
+  summarise(n = length(subj),
+            age = round(mean(AGE, na.rm = TRUE), digits = 1),
+            gender = paste(length(PTGENDER[PTGENDER=="Male"]),
+                           length(PTGENDER[PTGENDER=="Female"]),
+                           sep = "/"),
+            mmse = round(mean(MMSE, na.rm = TRUE), digits =1),
+            moca = round(mean(MOCA, na.rm = TRUE), digits =1))
+  
+datatable(adnidata_summary)
+
+adnidata_summary_xtable <- xtable(adnidata_summary)
+print(adnidata_summary_xtable)
+```
+
+ADNI training dataset only
+
+```{r}
+adnidata <- read.table("../data/adni_train_corrected.csv", header = TRUE, sep = ",")
+
+# Summarise
+adnidata_summary <- adnidata %>%
+  group_by(diagnosis) %>%
+  summarise(n = length(subj),
+            age = paste(round(mean(age, na.rm = TRUE), digits = 1),
+                        paste("(", round(sd(age, na.rm = TRUE), digits = 1), ")", sep = "")),
+            sex = paste(length(gender[gender=="Male"]),
+                           length(gender[gender=="Female"]),
+                           sep = "/"))
+  
+#datatable(adnidata_summary)
+
+adnidata_summary_xtable <- xtable(adnidata_summary)
+print(adnidata_summary_xtable,
+      include.rownames = FALSE)
+
+rm(list = c("adnidata",
+            "adnidata_summary",
+            "adnidata_summary_xtable"))
+```
+
+ADNI test dataset only
+```{r}
+adnidata <- read.table("../data/adni_test_corrected.csv", header = TRUE, sep = ",")
+
+# Summarise
+adnidata_summary <- adnidata %>%
+  group_by(diagnosis) %>%
+  summarise(n = length(subj),
+            age = paste(round(mean(age, na.rm = TRUE), digits = 1),
+                        paste("(", round(sd(age, na.rm = TRUE), digits = 1), ")", sep = "")),
+            sex = paste(length(gender[gender=="Male"]),
+                           length(gender[gender=="Female"]),
+                           sep = "/"))
+  
+#datatable(adnidata_summary)
+
+adnidata_summary_xtable <- xtable(adnidata_summary)
+print(adnidata_summary_xtable,
+      include.rownames = FALSE)
+
+rm(list = c("adnidata",
+            "adnidata_summary",
+            "adnidata_summary_xtable"))
+
+```
+
+NACC demographics
+
+```{r}
+# import diagnoses
+clinical_data_file = "../data/nacc_collatedResults.csv"
+nacc_clindata = read.table(clinical_data_file, header = TRUE)
+
+nacc_clindata_summary <- nacc_clindata %>%
+  group_by(diagnosis) %>%
+  summarise(n = length(subj),
+            age = paste(round(mean(age, na.rm = TRUE), digits = 1),
+                              paste("(", round(sd(age, na.rm = TRUE), digits = 1), ")", sep = "")),
+            sex = paste(length(gender[gender=="Male"]),
+                           length(gender[gender=="Female"]),
+                           sep = "/"))
+
+#datatable(nacc_clindata_summary)
+
+nacc_clindata_summary_xtable <- xtable(nacc_clindata_summary)
+print(nacc_clindata_summary_xtable,
+      include.rownames = FALSE)
+```
+
+```{r}
+diagnosis_map = list("Alzheimer's disease (AD)" = 'AD',
+                 'Vascular brain injury or vascular dementia including stroke' = 'OD',
+                 'Lewy body disease (LBD)' = 'OD', 
+                 'Control' = 'Control', 
+                 'Depression' = 'OND',
+                 'Missing/unknown' = 'remove', ## <<---------- !
+                 'Other neurologic, genetic, or infectious condition' = 'OND',
+                 'Cognitive impairment for other specified reasons (i.e., written-in values)' = 'OND',
+                 'Prion disease (CJD, other)' = 'OD', 
+                 'FTLD, other' = 'OD', 
+                 'Anxiety disorder' = 'OND',
+                 'Corticobasal degeneration (CBD)' = 'OD',
+                 'Cognitive impairment due to medications' = 'OND',
+                 'Other psychiatric disease' = 'OND',
+                 'Progressive supranuclear palsy (PSP)' = 'OD',
+                 'Cognitive impairment due to systemic disease or medical illness' = 'OND',
+                 'Traumatic brain injury (TBI)' = 'OND',
+                 'Cognitive impairment due to alcohol abuse' = 'OND', 
+                 'Bipolar disorder' = 'OND',
+                 'Schizophrenia or other psychosis' = 'OND',
+                 'FTLD with motor neuron disease (e.g., ALS)' = 'OD'
+                )
+```
+
+
+
+```{r}
+rm(list = c("nacc_clindata_summary",
+            "nacc_clindata",
+            "nacc_clindata_summary_xtable"))
+```
+
+UK biobank demographics
+
+```{r}
+# create sqlite connection
+ukbb.db <- DBI::dbConnect(SQLite(),
+                          "../data/ukb40183.db")
+
+# get handedness data separately
+handedness_ukbb_data <- dbGetQuery(ukbb.db,
+                        sql(paste("SELECT DISTINCT baseline.eid,",
+                                  "demogs.handedness",
+                                  "FROM baseline",
+                                  "LEFT JOIN demogs",
+                                  "ON baseline.eid = demogs.eid"))) %>%
+                                  #"WHERE clinicaldata.visit = '2'",
+  filter(handedness != "") %>%
+  group_by(eid) %>%
+  summarise(hand = max(handedness),
+            .groups = "keep")
+  
+
+```
+
+```{r}
+ukbb_data <- dbGetQuery(ukbb.db,
+                        sql(paste("SELECT DISTINCT demogs.age, baseline.sex, baseline.eid, clinicaldata.visit",
+                                  #"demogs.handedness",
+                                  "FROM baseline",
+                                  "LEFT JOIN demogs, clinicaldata",
+                                  "ON baseline.eid = demogs.eid",
+                                  "AND baseline.eid = clinicaldata.eid",
+                                  "AND clinicaldata.eid = demogs.eid",
+                                  "AND clinicaldata.visit = demogs.visit",
+                                  #"WHERE clinicaldata.visit = '2'",
+                                  "WHERE baseline.imaging = 1"))) %>%
+    filter(visit <= 2)  %>%
+    group_by(eid) %>%
+    filter(visit == max(visit))
+
+# add handedness data
+ukbb_data <- left_join(ukbb_data,
+                       handedness_ukbb_data) 
+
+# sumarise the data
+ukbb_data_summary <- ukbb_data %>%
+  mutate(group = 2) %>%
+  group_by(group) %>%
+  summarise(n = length(eid),
+            age = paste(round(mean(age, na.rm = TRUE) / 365.25, digits = 1),
+                        paste("(", round(sd(age / 365.25, na.rm = TRUE), digits = 1), ")", sep = "")),
+            sex = paste(length(sex[sex=="0"]),
+                           length(sex[sex =="1"]),
+                           sep = "/"),
+            hand = paste(length(hand[hand == 1]),
+                               length(hand[hand == 2]),
+                               length(hand[hand == 3]),
+                               sep = "/"),
+            .groups = "keep")
+
+ukbb_data_summary_xtable <- xtable(ukbb_data_summary)
+print(ukbb_data_summary_xtable,
+      include.rownames = FALSE)
+
+
+
+#rm(list = c("ukbb_data",
+#            "ukbb_data_summary",
+#            "ukbb_data_summary_xtable"))
+```
+
+Now we'll look at the results split into postiive and negative AD score.
+
+```{r}
+ukbb_results <- read.table("../results/latest_output_ukb_50.csv",
+                           sep = ",",
+                           header = TRUE)
+
+positive_list <- ukbb_results[ukbb_results$mean >= 0.5, "ukb_id"]
+
+# convert names using bridge
+bridge <- read.table("../data/bridge_46620_20904_20200122.csv",
+                     sep = ",",
+                     header = TRUE)
+bridge_list <- bridge$eid46620
+names(bridge_list) <- bridge$eid20904
+rm("bridge")
+
+positive_list_conv <- sapply(positive_list,
+                             function(x) bridge_list[[as.character(x)]])
+rm("bridge_list")
+
+#ukbb_data_summary <- ukbb_data %>%
+#  
+## n of positives
+#n_pos_ukbb <- nrow(ukbb_data_summary[ukbb_data_summary$ad_score == TRUE,])
+
+## n of negatives
+#n_neg_ukbb <- nrow(ukbb_data_summary[ukbb_data_summary$ad_score == FALSE,])
+
+
+
+ukbb_data_summary <- ukbb_data %>%
+  group_by(eid) %>%
+  mutate(ad_score = if(eid %in% positive_list_conv) {TRUE} else {FALSE}) %>%
+  group_by(ad_score) %>%
+  summarise(n = length(eid),
+            age = paste(round(mean(age, na.rm = TRUE) / 365.25, digits = 1),
+                        paste("(", round(sd(age, na.rm = TRUE) / 365.25, digits = 1), ")", sep = "")),
+            sex = paste(round((length(sex[sex=="0"]) / n()) * 100, digits = 1),
+                        round((length(sex[sex =="1"]) / n()) * 100, digits = 1),
+                        sep = "/"),
+            hand = paste(round((length(hand[hand == 1]) / n()) * 100, digits = 1),
+                               round((length(hand[hand == 2]) / n()) * 100, digits = 1),
+                               round((length(hand[hand == 3]) / n()) * 100, digits = 1),
+                               sep = "/"),
+            .groups = "keep")
+
+ukbb_data_summary_xtable <- xtable(ukbb_data_summary)
+print(ukbb_data_summary_xtable,
+      include.rownames = FALSE)
+
+rm("ukbb_data",
+   "handedness_ukbb_data")
+```
+
+
+```{r}
+# rate of smoking in the UK biobank
+clinscore = "ever_smoked"
+smoking_data <- dbGetQuery(ukbb.db,
+                           sql(paste("SELECT DISTINCT demogs.eid,",
+                                     "demogs.ever_smoked",
+                                     "FROM demogs",
+                                     "WHERE NOT demogs.ever_smoked =''"))) %>%
+  group_by(eid) %>%
+  summarise(ever_smoked = max(ever_smoked),
+                              .groups = "keep") %>%
+  ungroup() %>%
+  summarise("Non-smoker" = paste("Never smoked" = length(ever_smoked[ever_smoked == 0]),
+                                 "(", round(length(ever_smoked[ever_smoked == 0]) / n(), digits = 1),
+                                 ")", sep = ""),
+            "Smoker" = paste("Ever smoked" = length(ever_smoked[ever_smoked == 1]),
+                             "(", round(length(ever_smoked[ever_smoked == 1]) / n(), digits = 1),
+                             ")", sep = ""),
+            .groups = "drop")
+            
+
+  
+```
+
+
+```{r}
+# Disconnect database
+DBI::dbDisconnect(ukbb.db)
+```
+
+

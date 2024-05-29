@@ -1,0 +1,206 @@
+---
+title: "Odds ratios"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(RSQLite)
+library(ggplot2)
+library(tidyr)
+library(epitools)
+
+# options for rstan
+options(mc.cores = parallel::detectCores())
+```
+
+In this notebook we'll examine the correlation between the neuroimaging derived phenotype scores and clinical scores in the UK biobank population.
+
+```{r}
+# create sqlite connection
+ukbb.db <- DBI::dbConnect(SQLite(),
+                          "../data/ukb40183.db")
+```
+
+```{r}
+# define clinical score
+threshold = 0.5
+
+getdata <- function(clinscore, threshold){
+  # pairs matching
+  alldata <- dbGetQuery(ukbb.db,
+                        sql(paste("SELECT clinicaldata.eid, clinicaldata.noncancer_code_selfreported,",
+                                  "demogs.age, demogs.visit,",
+                                  paste("clinicaldata", clinscore, sep = "."), " AS clinscore,",
+                                  "ukbb_t1_phenotype.mean",
+                                  "FROM clinicaldata",
+                                  "JOIN ukbb_t1_phenotype, demogs, baseline ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                  "AND clinicaldata.eid = demogs.eid",
+                                  "AND clinicaldata.visit = demogs.visit",
+                                  "AND clinicaldata.eid = baseline.eid",
+                                  "AND ukbb_t1_phenotype.eid = baseline.eid",
+                                  "AND demogs.eid = baseline.eid",
+                                  "AND ukbb_t1_phenotype.eid = demogs.eid",
+                                  "WHERE demogs.age IS NOT ''",
+                                  "AND baseline.imaging = 1",
+                                  "AND", paste("clinicaldata", clinscore, sep = "."), "IS NOT ''"))) %>%
+    filter(visit <= 2) %>%
+    group_by(eid) %>%
+    filter(visit == max(visit))
+
+  alldata$adlike <- sapply(alldata$mean,
+                           function(x, thr) if (x >=  thr) { return("Positive") } else {return("Negative")},
+                           thr = threshold)
+  
+  alldata <- alldata %>%
+    mutate(adlike = ifelse(noncancer_code_selfreported == "1263", "AD", adlike)) %>%
+    filter(adlike != "AD") # filter out those with AD at recruitment
+  
+  
+  alldata$adlike <- as.factor(alldata$adlike)
+  alldata$clinscore <- as.numeric(alldata$clinscore)
+  alldata$age <- as.numeric(alldata$age)
+  
+  # normalise age
+  mean_age <- mean(alldata$age)
+  sd_age <- sd(alldata$age)
+  alldata$age <- (alldata$age - mean_age) / sd_age
+  
+  return(alldata)
+}
+
+```
+
+
+```{r}
+clinscore = "smoking_status"
+clinscore_name = "Smoking history"
+
+# pairs matching
+alldata <- dbGetQuery(ukbb.db,
+                      sql(paste("SELECT clinicaldata.eid, clinicaldata.noncancer_code_selfreported,",
+                                "demogs.age, demogs.visit,",
+                                paste("demogs", clinscore, sep = "."), " AS clinscore,",
+                                "ukbb_t1_phenotype.mean",
+                                "FROM clinicaldata",
+                                "JOIN ukbb_t1_phenotype, demogs, baseline ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                "AND clinicaldata.eid = demogs.eid",
+                                "AND clinicaldata.visit = demogs.visit",
+                                "AND clinicaldata.eid = baseline.eid",
+                                "AND ukbb_t1_phenotype.eid = demogs.eid",
+                                "WHERE demogs.age IS NOT ''",
+                                "AND baseline.imaging = 1",
+                                "AND", paste("demogs", clinscore, sep = "."), "IS NOT ''"))) %>%
+    filter(visit == 2)
+
+alldata$adlike <- sapply(alldata$mean,
+                         function(x, thr) if (x >=  thr) { return("Positive") } else {return("Negative")},
+                         thr = threshold)
+
+alldata <- alldata %>%
+  mutate(adlike = ifelse(noncancer_code_selfreported == "1263", "AD", adlike)) %>%
+  filter(adlike != "AD") # filter out those with AD at recruitment
+
+
+alldata$adlike <- as.factor(alldata$adlike)
+alldata$clinscore <- as.numeric(alldata$clinscore)
+alldata$age <- as.numeric(alldata$age)
+
+# normalise age
+mean_age <- mean(alldata$age)
+sd_age <- sd(alldata$age)
+alldata$age <- (alldata$age - mean_age) / sd_age
+  
+alldata <- alldata %>%
+  filter(clinscore >= 0)
+
+# convert to current vs ex/non-smoker
+alldata <- alldata %>%
+  mutate(clinscore = replace(clinscore, clinscore == 2, 1))
+
+alldata %>%
+  group_by(adlike, visit) %>%
+  summarise(n = length(eid))
+
+```
+
+```{r}
+# create confusion matrix
+conf_mat <- alldata %>%
+  group_by(adlike, clinscore) %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = adlike,
+              values_from = n)
+
+conf_mat <- as.matrix(conf_mat[,-1])
+rownames(conf_mat) = c("Never smoked",
+                       "Smoker")
+
+# do odds ratio
+oddsratio.wald(conf_mat)
+```
+
+# Smoking pack years
+
+```{r}
+clinscore = "smoking_packyears"
+clinscore_name = "Smoking pack years"
+
+# pairs matching
+alldata <- dbGetQuery(ukbb.db,
+                      sql(paste("SELECT clinicaldata.eid, clinicaldata.noncancer_code_selfreported,",
+                                "demogs.age, demogs.visit,",
+                                paste("demogs", clinscore, sep = "."), " AS clinscore,",
+                                "ukbb_t1_phenotype.mean",
+                                "FROM clinicaldata",
+                                "JOIN ukbb_t1_phenotype, demogs, baseline ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                "AND clinicaldata.eid = demogs.eid",
+                                "AND clinicaldata.visit = demogs.visit",
+                                "AND clinicaldata.eid = baseline.eid",
+                                "AND ukbb_t1_phenotype.eid = demogs.eid",
+                                "WHERE demogs.age IS NOT ''",
+                                "AND baseline.imaging = 1",
+                                "AND", paste("demogs", clinscore, sep = "."), "IS NOT ''"))) %>%
+    filter(visit == 2)
+
+alldata$adlike <- sapply(alldata$mean,
+                         function(x, thr) if (x >=  thr) { return("Positive") } else {return("Negative")},
+                         thr = threshold)
+
+alldata <- alldata %>%
+  mutate(adlike = ifelse(noncancer_code_selfreported == "1263", "AD", adlike)) %>%
+  filter(adlike != "AD") # filter out those with AD at recruitment
+
+
+alldata$adlike <- as.factor(alldata$adlike)
+alldata$clinscore <- as.numeric(alldata$clinscore)
+alldata$age <- as.numeric(alldata$age)
+
+# normalise age
+mean_age <- mean(alldata$age)
+sd_age <- sd(alldata$age)
+alldata$age <- (alldata$age - mean_age) / sd_age
+  
+alldata %>%
+  group_by(adlike, visit) %>%
+  summarise(n = length(eid))
+```
+
+
+```{r}
+# create confusion matrix
+conf_mat <- alldata %>%
+  mutate(clinscore = replace(clinscore, clinscore < 19.5, 0)) %>%
+  mutate(clinscore = replace(clinscore, clinscore >= 19.5, 1)) %>%
+  group_by(adlike, clinscore) %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = adlike,
+              values_from = n)
+
+conf_mat <- as.matrix(conf_mat[,-1])
+rownames(conf_mat) = c("Pack years < 19.5",
+                       "Pack years > 19.5")
+
+# do odds ratio
+oddsratio.wald(conf_mat)
+```

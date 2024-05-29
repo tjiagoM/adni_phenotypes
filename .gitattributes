@@ -1,0 +1,3 @@
+# remove notebooks and html reports from GitHub language stats
+*.ipynb linguist-vendored
+*.html linguist-vendored
