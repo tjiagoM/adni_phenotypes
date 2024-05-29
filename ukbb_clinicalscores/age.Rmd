@@ -1,0 +1,58 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(RSQLite)
+library(ggplot2)
+```
+
+```{r}
+# create sqlite connection
+ukbb.db <- DBI::dbConnect(SQLite(),
+                          "../data/ukb40183.db")
+```
+
+```{r}
+# define clinical score
+threshold = 0.5
+
+# pairs matching
+alldata <- dbGetQuery(ukbb.db,
+                      sql(paste("SELECT clinicaldata.eid, clinicaldata.noncancer_code_selfreported,",
+                                "demogs.age, demogs.visit,",
+                                "ukbb_t1_phenotype.mean",
+                                "FROM clinicaldata",
+                                "JOIN ukbb_t1_phenotype, demogs, baseline ON clinicaldata.eid = ukbb_t1_phenotype.eid",
+                                "AND clinicaldata.eid = demogs.eid",
+                                "AND clinicaldata.visit = demogs.visit",
+                                "AND clinicaldata.eid = baseline.eid",
+                                "AND ukbb_t1_phenotype.eid = baseline.eid",
+                                "AND demogs.eid = baseline.eid",
+                                "AND ukbb_t1_phenotype.eid = demogs.eid",
+                                "WHERE demogs.age IS NOT ''",
+                                "AND baseline.imaging = 1"))) %>%
+  filter(visit <= 2) %>%
+  group_by(eid) %>%
+  filter(visit == max(visit))
+
+alldata$adlike <- sapply(alldata$mean,
+                         function(x, thr) if (x >=  thr) { return("Positive") } else {return("Negative")},
+                         thr = threshold)
+
+alldata <- alldata %>%
+  mutate(adlike = ifelse(noncancer_code_selfreported == "1263", "AD", adlike)) %>%
+  filter(adlike != "AD") # filter out those with AD at recruitment
+
+alldata$adlike <- as.factor(alldata$adlike)
+alldata$age <- as.numeric(alldata$age)
+
+
+```
+
+
+```{r}
+
+```
